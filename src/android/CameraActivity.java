@@ -63,6 +63,8 @@ public class CameraActivity extends Fragment {
     void onCameraStarted();
   }
 
+
+
   private CameraPreviewListener eventListener;
   private static final String TAG = "CameraActivity";
   public FrameLayout mainLayout;
@@ -114,6 +116,20 @@ public class CameraActivity extends Fragment {
     this.y = y;
     this.width = width;
     this.height = height;
+  }
+
+  public void refocusCamera()
+  {
+          getActivity().runOnUiThread(new Runnable() {
+              @Override
+              public void run() {
+                  mCamera.cancelAutoFocus();
+                  mCamera.autoFocus(new Camera.AutoFocusCallback() {
+                          @Override
+                          public void onAutoFocus(boolean success, Camera camera) {}
+                  });
+              }
+          });
   }
 
   private void createCameraPreview(){
@@ -634,6 +650,8 @@ public class CameraActivity extends Fragment {
       }
     });
   }
+
+  
 
   public void takePicture(final int width, final int height, final int quality){
     Log.d(TAG, "CameraPreview takePicture width: " + width + ", height: " + height + ", quality: " + quality);

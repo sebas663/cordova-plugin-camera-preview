@@ -57,6 +57,10 @@ CameraPreview.show = function(onSuccess, onError) {
     exec(onSuccess, onError, PLUGIN_NAME, "showCamera", []);
 };
 
+CameraPreview.focus = function() {
+    exec(null, null, PLUGIN_NAME, "focus", []);
+  };
+
 CameraPreview.takeSnapshot = function(opts, onSuccess, onError) {
     if (!opts) {
         opts = {};

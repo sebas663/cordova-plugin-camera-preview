@@ -8,6 +8,8 @@ import android.app.FragmentTransaction;
 import android.hardware.Camera;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.Camera.AutoFocusCallback;
+
 import android.hardware.camera2.CameraManager;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -31,6 +33,7 @@ import java.util.Arrays;
 public class CameraPreview extends CordovaPlugin implements CameraActivity.CameraPreviewListener {
 
   private static final String TAG = "CameraPreview";
+  private final String FOCUS_CAMERA_ACTION = "focus";
 
   private static final String COLOR_EFFECT_ACTION = "setColorEffect";
   private static final String SUPPORTED_COLOR_EFFECTS_ACTION = "getSupportedColorEffects";
@@ -166,7 +169,10 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
       return getSupportedColorEffects(callbackContext);
     } else if (GET_CAMERA_CHARACTERISTICS_ACTION.equals(action)) {
       return getCameraCharacteristics(callbackContext);
-    }  
+    } else if (FOCUS_CAMERA_ACTION.equals(action)){
+      return focusCamera(args, callbackContext);
+  }  
+
     return false;
   }
 
@@ -181,6 +187,16 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     if (requestCode == CAM_REQ_CODE) {
       startCamera(this.execArgs.getInt(0), this.execArgs.getInt(1), this.execArgs.getInt(2), this.execArgs.getInt(3), this.execArgs.getString(4), this.execArgs.getBoolean(5), this.execArgs.getBoolean(6), this.execArgs.getBoolean(7), this.execArgs.getString(8), this.execArgs.getBoolean(9), this.execArgs.getBoolean(10), this.execArgs.getBoolean(11), this.execCallback);
     }
+  }
+
+
+
+  private boolean focusCamera(final JSONArray args, CallbackContext callbackContext) {
+    if(fragment == null){
+        return false;
+    }
+    fragment.refocusCamera();
+    return true;
   }
 
   private boolean hasView(CallbackContext callbackContext) {
