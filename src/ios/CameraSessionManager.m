@@ -700,10 +700,10 @@
     if (!granted) {
       //Not granted access to mediaType
       dispatch_async(dispatch_get_main_queue(), ^{
-          [[[UIAlertView alloc] initWithTitle:@"Error"
-                                      message:@"Camera permission not found. Please, check your privacy settings."
+          [[[UIAlertView alloc] initWithTitle:@"Permiso denegado"
+                                      message:@"La aplicación no posee permisos para acceder a la cámara. Por favor, verifique su configuración de privacidad."
                                      delegate:self
-                            cancelButtonTitle:@"OK"
+                            cancelButtonTitle:@"Aceptar"
                             otherButtonTitles:nil] show];
       });
     }
