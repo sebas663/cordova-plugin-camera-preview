@@ -465,7 +465,7 @@ public class CameraActivity extends Fragment {
             bitmap = applyMatrix(bitmap, matrix);
 
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, currentQuality, outputStream);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, currentQuality, outputStream);
             data = outputStream.toByteArray();
           }
         }
