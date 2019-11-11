@@ -666,9 +666,9 @@ public class CameraActivity extends Fragment {
       new Thread() {
         public void run() {
           Camera.Parameters params = mCamera.getParameters();
-
-          int w = getResources().getDisplayMetrics().widthPixels;
-          int h = getResources().getDisplayMetrics().heightPixels;
+          DisplayMetrics metrics = cordova.getActivity().getResources().getDisplayMetrics();
+          int w = metrics.widthPixels;
+          int h = metrics.heightPixels;
           
 //          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
           params.setPictureSize(w, h);
