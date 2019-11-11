@@ -17,7 +17,6 @@ import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.hardware.Camera.PictureCallback;
 import android.hardware.Camera.ShutterCallback;
-importDisplayMetrics android.os.Bundle;
 import android.util.Log;
 import android.util.;
 import android.view.GestureDetector;
