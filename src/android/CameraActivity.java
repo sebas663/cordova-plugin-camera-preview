@@ -666,7 +666,9 @@ public class CameraActivity extends Fragment {
       new Thread() {
         public void run() {
           Camera.Parameters params = mCamera.getParameters();
-          params.setPictureSize(width, height);
+
+          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
+          params.setPictureSize(size.width, size.height);
           currentQuality = quality;
 
           if(cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
