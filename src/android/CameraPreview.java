@@ -195,7 +195,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     if(fragment == null){
         return false;
     }
-    fragment.refocusCamera();
+//    fragment.refocusCamera();
     return true;
   }
 
