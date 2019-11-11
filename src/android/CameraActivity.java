@@ -666,7 +666,6 @@ public class CameraActivity extends Fragment {
       new Thread() {
         public void run() {
           Camera.Parameters params = mCamera.getParameters();
-//          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
           params.setPictureSize(width, height);
           currentQuality = quality;
 
