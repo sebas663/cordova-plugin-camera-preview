@@ -367,8 +367,10 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     }
 
     takePictureCallbackContext = callbackContext;
-
-    fragment.takePicture(width, height, quality);
+    DisplayMetrics metrics = cordova.getActivity().getResources().getDisplayMetrics();
+    int w = metrics.widthPixels;
+    int h = metrics.heightPixels;
+    fragment.takePicture(w, h, quality);
 
     return true;
   }

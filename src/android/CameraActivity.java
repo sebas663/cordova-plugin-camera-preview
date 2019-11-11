@@ -17,9 +17,9 @@ import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.hardware.Camera.PictureCallback;
 import android.hardware.Camera.ShutterCallback;
-import android.os.Bundle;
+importDisplayMetrics android.os.Bundle;
 import android.util.Log;
-import android.util.DisplayMetrics;
+import android.util.;
 import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -666,12 +666,8 @@ public class CameraActivity extends Fragment {
       new Thread() {
         public void run() {
           Camera.Parameters params = mCamera.getParameters();
-          DisplayMetrics metrics = cordova.getActivity().getResources().getDisplayMetrics();
-          int w = metrics.widthPixels;
-          int h = metrics.heightPixels;
-          
 //          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
-          params.setPictureSize(w, h);
+          params.setPictureSize(width, height);
           currentQuality = quality;
 
           if(cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
