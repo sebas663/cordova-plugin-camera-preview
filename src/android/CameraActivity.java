@@ -665,22 +665,22 @@ public class CameraActivity extends Fragment {
 
       new Thread() {
         public void run() {
-          Camera.Parameters params = mCamera.getParameters();
-
-//          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
-          params.setPictureSize(width, height);
-          currentQuality = quality;
-
-          if(cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
-            // The image will be recompressed in the callback
-            params.setJpegQuality(99);
-          } else {
-            params.setJpegQuality(quality);
-          }
-
-          params.setRotation(mPreview.getDisplayOrientation());
-
-          mCamera.setParameters(params);
+//          Camera.Parameters params = mCamera.getParameters();
+//
+////          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
+//          params.setPictureSize(width, height);
+//          currentQuality = quality;
+//
+//          if(cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
+//            // The image will be recompressed in the callback
+//            params.setJpegQuality(99);
+//          } else {
+//            params.setJpegQuality(quality);
+//          }
+//
+//          params.setRotation(mPreview.getDisplayOrientation());
+//
+//          mCamera.setParameters(params);
           mCamera.takePicture(shutterCallback, null, jpegPictureCallback);
         }
       }.start();
