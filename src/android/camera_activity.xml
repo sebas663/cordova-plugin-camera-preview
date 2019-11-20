@@ -38,7 +38,7 @@
       android:id="@+id/frame_view"
       android:layout_gravity="center_horizontal|bottom"
       android:adjustViewBounds="true"
-      android:scaleType="centerInside" />
+      android:scaleType="fitXY" />
 
   </RelativeLayout>
 
