@@ -265,7 +265,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     fragment.setEventListener(this);
     fragment.defaultCamera = defaultCamera;
     fragment.tapToTakePicture = tapToTakePicture;
-    fragment.dragEnabled = dragEnabled;
+//    fragment.dragEnabled = dragEnabled;
     fragment.tapToFocus = tapFocus;
     fragment.disableExifHeaderStripping = disableExifHeaderStripping;
     fragment.storeToFile = storeToFile;
@@ -725,7 +725,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     Camera camera = fragment.getCamera();
     Camera.Parameters params = camera.getParameters();
 
-//    params.setPreviewSize(width, height);
+    params.setPreviewSize(width, height);
     fragment.setCameraParameters(params);
     camera.startPreview();
 
