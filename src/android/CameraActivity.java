@@ -701,16 +701,16 @@ public class CameraActivity extends Fragment {
 //					params.setPictureSize(size.width, size.height);
 //					currentQuality = quality;
 //
-//					if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
-//						// The image will be recompressed in the callback
-//						params.setJpegQuality(99);
-//					} else {
-//						params.setJpegQuality(quality);
-//					}
-//
-//					params.setRotation(mPreview.getDisplayOrientation());
-//
-//					mCamera.setParameters(params);
+					if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
+						// The image will be recompressed in the callback
+						params.setJpegQuality(99);
+					} else {
+						params.setJpegQuality(quality);
+					}
+
+					params.setRotation(mPreview.getDisplayOrientation());
+
+					mCamera.setParameters(params);
 					mCamera.takePicture(shutterCallback, null, jpegPictureCallback);
 				}
 			}.start();
