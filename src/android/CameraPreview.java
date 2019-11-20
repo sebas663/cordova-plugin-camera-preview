@@ -1,738 +1,1042 @@
 package com.cordovaplugincamerapreview;
 
-import android.app.Activity;
-import android.content.pm.ActivityInfo;
-import android.app.Fragment;
+import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Bitmap.CompressFormat;
-import android.util.Base64;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.ImageFormat;
-import android.graphics.Matrix;
-import android.graphics.Rect;
-import android.graphics.YuvImage;
+import android.app.FragmentManager;
+import android.app.FragmentTransaction;
 import android.hardware.Camera;
-import android.hardware.Camera.PictureCallback;
-import android.hardware.Camera.ShutterCallback;
-import android.os.Bundle;
-import android.util.Log;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.Camera.AutoFocusCallback;
+
+import android.hardware.camera2.CameraManager;
 import android.util.DisplayMetrics;
-import android.view.GestureDetector;
-import android.view.Gravity;
-import android.view.LayoutInflater;
-import android.view.MotionEvent;
-import android.view.Surface;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
-import android.view.View;
+import android.util.Log;
+import android.util.Size;
+import android.util.SizeF;
+import android.util.TypedValue;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
+import android.view.ViewParent;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.RelativeLayout;
-import android.support.media.ExifInterface;
 
-import org.apache.cordova.LOG;
+import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.PluginResult;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import org.json.JSONException;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.lang.Exception;
-import java.lang.Integer;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.List;
 import java.util.Arrays;
-import java.util.UUID;
 
-public class CameraActivity extends Fragment {
+public class CameraPreview extends CordovaPlugin implements CameraActivity.CameraPreviewListener {
 
-  public interface CameraPreviewListener {
-    void onPictureTaken(String originalPicture);
-    void onPictureTakenError(String message);
-    void onSnapshotTaken(String originalPicture);
-    void onSnapshotTakenError(String message);
-    void onFocusSet(int pointX, int pointY);
-    void onFocusSetError(String message);
-    void onBackButton();
-    void onCameraStarted();
+  private static final String TAG = "CameraPreview";
+  private final String FOCUS_CAMERA_ACTION = "focus";
+
+  private static final String COLOR_EFFECT_ACTION = "setColorEffect";
+  private static final String SUPPORTED_COLOR_EFFECTS_ACTION = "getSupportedColorEffects";
+  private static final String ZOOM_ACTION = "setZoom";
+  private static final String GET_ZOOM_ACTION = "getZoom";
+  private static final String GET_HFOV_ACTION = "getHorizontalFOV";
+  private static final String GET_MAX_ZOOM_ACTION = "getMaxZoom";
+  private static final String SUPPORTED_FLASH_MODES_ACTION = "getSupportedFlashModes";
+  private static final String GET_FLASH_MODE_ACTION = "getFlashMode";
+  private static final String SET_FLASH_MODE_ACTION = "setFlashMode";
+  private static final String START_CAMERA_ACTION = "startCamera";
+  private static final String STOP_CAMERA_ACTION = "stopCamera";
+  private static final String PREVIEW_SIZE_ACTION = "setPreviewSize";
+  private static final String SWITCH_CAMERA_ACTION = "switchCamera";
+  private static final String TAKE_PICTURE_ACTION = "takePicture";
+  private static final String TAKE_SNAPSHOT_ACTION = "takeSnapshot";
+  private static final String SHOW_CAMERA_ACTION = "showCamera";
+  private static final String HIDE_CAMERA_ACTION = "hideCamera";
+  private static final String TAP_TO_FOCUS = "tapToFocus";
+  private static final String SUPPORTED_PICTURE_SIZES_ACTION = "getSupportedPictureSizes";
+  private static final String SUPPORTED_FOCUS_MODES_ACTION = "getSupportedFocusModes";
+  private static final String SUPPORTED_WHITE_BALANCE_MODES_ACTION = "getSupportedWhiteBalanceModes";
+  private static final String GET_FOCUS_MODE_ACTION = "getFocusMode";
+  private static final String SET_FOCUS_MODE_ACTION = "setFocusMode";
+  private static final String GET_EXPOSURE_MODES_ACTION = "getExposureModes";
+  private static final String GET_EXPOSURE_MODE_ACTION = "getExposureMode";
+  private static final String SET_EXPOSURE_MODE_ACTION = "setExposureMode";
+  private static final String GET_EXPOSURE_COMPENSATION_ACTION = "getExposureCompensation";
+  private static final String SET_EXPOSURE_COMPENSATION_ACTION = "setExposureCompensation";
+  private static final String GET_EXPOSURE_COMPENSATION_RANGE_ACTION = "getExposureCompensationRange";
+  private static final String GET_WHITE_BALANCE_MODE_ACTION = "getWhiteBalanceMode";
+  private static final String SET_WHITE_BALANCE_MODE_ACTION = "setWhiteBalanceMode";
+  private static final String SET_BACK_BUTTON_CALLBACK = "onBackButton";
+  private static final String GET_CAMERA_CHARACTERISTICS_ACTION = "getCameraCharacteristics";
+
+  private static final int CAM_REQ_CODE = 0;
+
+  private static final String [] permissions = {
+    Manifest.permission.CAMERA
+  };
+
+  private CameraActivity fragment;
+  private CallbackContext takePictureCallbackContext;
+  private CallbackContext takeSnapshotCallbackContext;
+  private CallbackContext setFocusCallbackContext;
+  private CallbackContext startCameraCallbackContext;
+  private CallbackContext tapBackButtonContext  = null;
+
+  private CallbackContext execCallback;
+  private JSONArray execArgs;
+
+  private ViewParent webViewParent;
+
+  private int containerViewId = 20; //<- set to random number to prevent conflict with other plugins
+  public CameraPreview(){
+    super();
+    Log.d(TAG, "Constructing");
   }
-
-
-
-  private CameraPreviewListener eventListener;
-  private static final String TAG = "CameraActivity";
-  public FrameLayout mainLayout;
-  public FrameLayout frameContainerLayout;
-
-  private Preview mPreview;
-  private boolean canTakePicture = true;
-
-  private View view;
-  private Camera.Parameters cameraParameters;
-  private Camera mCamera;
-  private int numberOfCameras;
-  private int cameraCurrentlyLocked;
-  private int currentQuality;
-
-  // The first rear facing camera
-  private int defaultCameraId;
-  public String defaultCamera;
-  public boolean tapToTakePicture;
-  public boolean dragEnabled;
-  public boolean tapToFocus;
-  public boolean disableExifHeaderStripping;
-  public boolean storeToFile;
-  public boolean toBack;
-
-  public int width;
-  public int height;
-  public int x;
-  public int y;
-
-  public void setEventListener(CameraPreviewListener listener){
-    eventListener = listener;
-  }
-
-  private String appResourcesPackage;
 
   @Override
-  public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-    appResourcesPackage = getActivity().getPackageName();
+  public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
 
-    // Inflate the layout for this fragment
-    view = inflater.inflate(getResources().getIdentifier("camera_activity", "layout", appResourcesPackage), container, false);
-    createCameraPreview();
-    return view;
+    if (START_CAMERA_ACTION.equals(action)) {
+      if (cordova.hasPermission(permissions[0])) {
+        return startCamera(args.getInt(0), args.getInt(1), args.getInt(2), args.getInt(3), args.getString(4), args.getBoolean(5), args.getBoolean(6), args.getBoolean(7), args.getString(8), args.getBoolean(9), args.getBoolean(10), args.getBoolean(11), callbackContext);
+      } else {
+        this.execCallback = callbackContext;
+        this.execArgs = args;
+        cordova.requestPermissions(this, CAM_REQ_CODE, permissions);
+        return true;
+      }
+    } else if (TAKE_PICTURE_ACTION.equals(action)) {
+      return takePicture(args.getInt(0), args.getInt(1), args.getInt(2), callbackContext);
+    } else if (TAKE_SNAPSHOT_ACTION.equals(action)) {
+      return takeSnapshot(args.getInt(0), callbackContext);
+    } else if (COLOR_EFFECT_ACTION.equals(action)) {
+      return setColorEffect(args.getString(0), callbackContext);
+    } else if (ZOOM_ACTION.equals(action)) {
+      return setZoom(args.getInt(0), callbackContext);
+    } else if (GET_ZOOM_ACTION.equals(action)) {
+      return getZoom(callbackContext);
+    } else if (GET_HFOV_ACTION.equals(action)) {
+      return getHorizontalFOV(callbackContext);
+    } else if (GET_MAX_ZOOM_ACTION.equals(action)) {
+      return getMaxZoom(callbackContext);
+    } else if (PREVIEW_SIZE_ACTION.equals(action)) {
+      return setPreviewSize(args.getInt(0), args.getInt(1), callbackContext);
+    } else if (SUPPORTED_FLASH_MODES_ACTION.equals(action)) {
+      return getSupportedFlashModes(callbackContext);
+    } else if (GET_FLASH_MODE_ACTION.equals(action)) {
+      return getFlashMode(callbackContext);
+    } else if (SET_FLASH_MODE_ACTION.equals(action)) {
+      return setFlashMode(args.getString(0), callbackContext);
+    } else if (STOP_CAMERA_ACTION.equals(action)){
+      return stopCamera(callbackContext);
+    } else if (SHOW_CAMERA_ACTION.equals(action)) {
+      return showCamera(callbackContext);
+    } else if (HIDE_CAMERA_ACTION.equals(action)) {
+      return hideCamera(callbackContext);
+    } else if (TAP_TO_FOCUS.equals(action)) {
+      return tapToFocus(args.getInt(0), args.getInt(1), callbackContext);
+    } else if (SWITCH_CAMERA_ACTION.equals(action)) {
+      return switchCamera(callbackContext);
+    } else if (SUPPORTED_PICTURE_SIZES_ACTION.equals(action)) {
+      return getSupportedPictureSizes(callbackContext);
+    } else if (GET_EXPOSURE_MODES_ACTION.equals(action)) {
+      return getExposureModes(callbackContext);
+    } else if (SUPPORTED_FOCUS_MODES_ACTION.equals(action)) {
+      return getSupportedFocusModes(callbackContext);
+    } else if (GET_FOCUS_MODE_ACTION.equals(action)) {
+      return getFocusMode(callbackContext);
+    } else if (SET_FOCUS_MODE_ACTION.equals(action)) {
+      return setFocusMode(args.getString(0), callbackContext);
+    } else if (GET_EXPOSURE_MODE_ACTION.equals(action)) {
+      return getExposureMode(callbackContext);
+    } else if (SET_EXPOSURE_MODE_ACTION.equals(action)) {
+      return setExposureMode(args.getString(0), callbackContext);
+    } else if (GET_EXPOSURE_COMPENSATION_ACTION.equals(action)) {
+      return getExposureCompensation(callbackContext);
+    } else if (SET_EXPOSURE_COMPENSATION_ACTION.equals(action)) {
+      return setExposureCompensation(args.getInt(0), callbackContext);
+    } else if (GET_EXPOSURE_COMPENSATION_RANGE_ACTION.equals(action)) {
+      return getExposureCompensationRange(callbackContext);
+    } else if (SUPPORTED_WHITE_BALANCE_MODES_ACTION.equals(action)) {
+      return getSupportedWhiteBalanceModes(callbackContext);
+    } else if (GET_WHITE_BALANCE_MODE_ACTION.equals(action)) {
+      return getWhiteBalanceMode(callbackContext);
+    } else if (SET_WHITE_BALANCE_MODE_ACTION.equals(action)) {
+      return setWhiteBalanceMode(args.getString(0),callbackContext);
+    } else if (SET_BACK_BUTTON_CALLBACK.equals(action)) {
+      return setBackButtonListener(callbackContext);
+    } else if (SUPPORTED_COLOR_EFFECTS_ACTION.equals(action)) {
+      return getSupportedColorEffects(callbackContext);
+    } else if (GET_CAMERA_CHARACTERISTICS_ACTION.equals(action)) {
+      return getCameraCharacteristics(callbackContext);
+    } else if (FOCUS_CAMERA_ACTION.equals(action)){
+      return focusCamera(args, callbackContext);
+  }  
+
+    return false;
   }
 
-  public void setRect(int x, int y, int width, int height){
-    this.x = x;
-    this.y = y;
-    this.width = width;
-    this.height = height;
-  }
-
-  public void refocusCamera()
-  {
-          getActivity().runOnUiThread(new Runnable() {
-              @Override
-              public void run() {
-                  mCamera.cancelAutoFocus();
-                  mCamera.autoFocus(new Camera.AutoFocusCallback() {
-                          @Override
-                          public void onAutoFocus(boolean success, Camera camera) {}
-                  });
-              }
-          });
-  }
-
-  private void createCameraPreview(){
-    if(mPreview == null) {
-      setDefaultCameraId();
-
-      //set box position and size
-      FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(width, height);
-      layoutParams.setMargins(x, y, 0, 0);
-      frameContainerLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("frame_container", "id", appResourcesPackage));
-      frameContainerLayout.setLayoutParams(layoutParams);
-
-      //video view
-      mPreview = new Preview(getActivity());
-      mainLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("video_view", "id", appResourcesPackage));
-      mainLayout.setLayoutParams(new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT));
-      mainLayout.addView(mPreview);
-      mainLayout.setEnabled(false);
-
-        if(toBack == false) {
-            this.setupTouchAndBackButton();
-        }
-
+  @Override
+  public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
+    for(int r:grantResults){
+      if(r == PackageManager.PERMISSION_DENIED){
+        execCallback.sendPluginResult(new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION));
+        return;
+      }
+    }
+    if (requestCode == CAM_REQ_CODE) {
+      startCamera(this.execArgs.getInt(0), this.execArgs.getInt(1), this.execArgs.getInt(2), this.execArgs.getInt(3), this.execArgs.getString(4), this.execArgs.getBoolean(5), this.execArgs.getBoolean(6), this.execArgs.getBoolean(7), this.execArgs.getString(8), this.execArgs.getBoolean(9), this.execArgs.getBoolean(10), this.execArgs.getBoolean(11), this.execCallback);
     }
   }
-  private void setupTouchAndBackButton() {
 
-      final GestureDetector gestureDetector = new GestureDetector(getActivity().getApplicationContext(), new TapGestureDetector());
 
-      getActivity().runOnUiThread(new Runnable() {
+
+  private boolean focusCamera(final JSONArray args, CallbackContext callbackContext) {
+    if(fragment == null){
+        return false;
+    }
+    fragment.refocusCamera();
+    return true;
+  }
+
+  private boolean hasView(CallbackContext callbackContext) {
+    if(fragment == null) {
+      callbackContext.error("No preview");
+      return false;
+    }
+
+    return true;
+  }
+
+  private boolean hasCamera(CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return false;
+    }
+
+    if(fragment.getCamera() == null) {
+      callbackContext.error("No Camera");
+      return false;
+    }
+
+    return true;
+  }
+
+  private boolean getSupportedPictureSizes(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    List<Camera.Size> supportedSizes;
+    Camera camera = fragment.getCamera();
+    supportedSizes = camera.getParameters().getSupportedPictureSizes();
+    if (supportedSizes != null) {
+      JSONArray sizes = new JSONArray();
+      for (int i=0; i<supportedSizes.size(); i++) {
+        Camera.Size size = supportedSizes.get(i);
+        int h = size.height;
+        int w = size.width;
+        JSONObject jsonSize = new JSONObject();
+        try {
+          jsonSize.put("height", new Integer(h));
+          jsonSize.put("width", new Integer(w));
+        }
+        catch(JSONException e){
+          e.printStackTrace();
+        }
+        sizes.put(jsonSize);
+      }
+      callbackContext.success(sizes);
+      return true;
+    }
+    callbackContext.error("Camera Parameters access error");
+    return true;
+  }
+
+    private boolean startCamera(int x, int y, int width, int height, String defaultCamera, Boolean tapToTakePicture, Boolean dragEnabled, final Boolean toBack, String alpha, boolean tapFocus, boolean disableExifHeaderStripping, boolean storeToFile, CallbackContext callbackContext) {
+    Log.d(TAG, "start camera action");
+    if (fragment != null) {
+      callbackContext.error("Camera already started");
+      return true;
+    }
+
+    final float opacity = Float.parseFloat(alpha);
+
+    fragment = new CameraActivity();
+    fragment.setEventListener(this);
+    fragment.defaultCamera = defaultCamera;
+    fragment.tapToTakePicture = tapToTakePicture;
+    fragment.dragEnabled = dragEnabled;
+    fragment.tapToFocus = tapFocus;
+    fragment.disableExifHeaderStripping = disableExifHeaderStripping;
+    fragment.storeToFile = storeToFile;
+    fragment.toBack = toBack;
+
+    DisplayMetrics metrics = cordova.getActivity().getResources().getDisplayMetrics();
+    // offset
+    int computedX = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, x, metrics);
+    int computedY = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, y, metrics);
+
+    // size
+    int computedWidth = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, width, metrics);
+    int computedHeight = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, height, metrics);
+
+    fragment.setRect(computedX, computedY, computedWidth, computedHeight);
+
+    startCameraCallbackContext = callbackContext;
+
+    cordova.getActivity().runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+
+
+        //create or update the layout params for the container view
+        FrameLayout containerView = (FrameLayout)cordova.getActivity().findViewById(containerViewId);
+        if(containerView == null){
+          containerView = new FrameLayout(cordova.getActivity().getApplicationContext());
+          containerView.setId(containerViewId);
+
+          FrameLayout.LayoutParams containerLayoutParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+          cordova.getActivity().addContentView(containerView, containerLayoutParams);
+        }
+        //display camera bellow the webview
+        if(toBack){
+
+          webView.getView().setBackgroundColor(0x00000000);
+          webViewParent = webView.getView().getParent();
+           ((ViewGroup)webView.getView()).bringToFront();
+
+        }else{
+
+          //set camera back to front
+          containerView.setAlpha(opacity);
+          containerView.bringToFront();
+
+        }
+
+        //add the fragment to the container
+        FragmentManager fragmentManager = cordova.getActivity().getFragmentManager();
+        FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+        fragmentTransaction.add(containerView.getId(), fragment);
+        fragmentTransaction.commit();
+      }
+    });
+
+    return true;
+  }
+
+  public void onCameraStarted() {
+    Log.d(TAG, "Camera started");
+
+    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, "Camera started");
+    pluginResult.setKeepCallback(true);
+    startCameraCallbackContext.sendPluginResult(pluginResult);
+  }
+
+  private boolean takeSnapshot(int quality, CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return true;
+    }
+
+    takeSnapshotCallbackContext = callbackContext;
+
+    fragment.takeSnapshot(quality);
+    return true;
+  }
+
+  public void onSnapshotTaken(String originalPicture) {
+    Log.d(TAG, "returning snapshot");
+
+    JSONArray data = new JSONArray();
+    data.put(originalPicture);
+
+    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, data);
+    pluginResult.setKeepCallback(true);
+    takeSnapshotCallbackContext.sendPluginResult(pluginResult);
+    takeSnapshotCallbackContext = null;
+  }
+
+  public void onSnapshotTakenError(String message) {
+    Log.d(TAG, "CameraPreview onSnapshotTakenError");
+    takeSnapshotCallbackContext.error(message);
+    takeSnapshotCallbackContext = null;
+  }
+
+  private boolean takePicture(int width, int height, int quality, CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return true;
+    }
+
+    takePictureCallbackContext = callbackContext;
+
+    fragment.takePicture(width, height, quality);
+
+    return true;
+  }
+
+  public void onPictureTaken(String originalPicture) {
+    Log.d(TAG, "returning picture");
+
+    JSONArray data = new JSONArray();
+    data.put(originalPicture);
+
+    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, data);
+    pluginResult.setKeepCallback(true);
+    takePictureCallbackContext.sendPluginResult(pluginResult);
+  }
+
+  public void onPictureTakenError(String message) {
+    Log.d(TAG, "CameraPreview onPictureTakenError");
+    takePictureCallbackContext.error(message);
+  }
+
+  private boolean setColorEffect(String effect, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    List<String> supportedColors;
+    supportedColors = params.getSupportedColorEffects();
+
+    if(supportedColors.contains(effect)){
+      params.setColorEffect(effect);
+      fragment.setCameraParameters(params);
+      callbackContext.success(effect);
+    }else{
+      callbackContext.error("Color effect not supported" + effect);
+      return true;
+    }
+    return true;
+  }
+
+  private boolean getSupportedColorEffects(CallbackContext callbackContext) {
+      if(this.hasCamera(callbackContext) == false){
+        return true;
+      }
+
+      Camera camera = fragment.getCamera();
+      Camera.Parameters params = camera.getParameters();
+      List<String> supportedColors;
+      supportedColors = params.getSupportedColorEffects();
+      JSONArray jsonColorEffects = new JSONArray();
+
+      if (supportedColors != null) {
+        for (int i=0; i<supportedColors.size(); i++) {
+            jsonColorEffects.put(new String(supportedColors.get(i)));
+        }
+      }
+
+      callbackContext.success(jsonColorEffects);
+      return true;
+    }
+
+  private boolean getExposureModes(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (camera.getParameters().isAutoExposureLockSupported()) {
+      JSONArray jsonExposureModes = new JSONArray();
+      jsonExposureModes.put(new String("lock"));
+      jsonExposureModes.put(new String("continuous"));
+      callbackContext.success(jsonExposureModes);
+    } else {
+      callbackContext.error("Exposure modes not supported");
+    }
+    return true;
+  }
+
+  private boolean getExposureMode(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    String exposureMode;
+
+    if (camera.getParameters().isAutoExposureLockSupported()) {
+      if (camera.getParameters().getAutoExposureLock()) {
+        exposureMode = "lock";
+      } else {
+        exposureMode = "continuous";
+      };
+      callbackContext.success(exposureMode);
+    } else {
+      callbackContext.error("Exposure mode not supported");
+    }
+    return true;
+  }
+
+  private boolean setExposureMode(String exposureMode, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (camera.getParameters().isAutoExposureLockSupported()) {
+      params.setAutoExposureLock("lock".equals(exposureMode));
+      fragment.setCameraParameters(params);
+      callbackContext.success();
+    } else {
+      callbackContext.error("Exposure mode not supported");
+    }
+    return true;
+  }
+
+  private boolean getExposureCompensation(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (camera.getParameters().getMinExposureCompensation() == 0 && camera.getParameters().getMaxExposureCompensation() == 0) {
+      callbackContext.error("Exposure corection not supported");
+    } else {
+      int exposureCompensation = camera.getParameters().getExposureCompensation();
+      callbackContext.success(exposureCompensation);
+    }
+    return true;
+  }
+
+  private boolean setExposureCompensation(int exposureCompensation, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    int minExposureCompensation = camera.getParameters().getMinExposureCompensation();
+    int maxExposureCompensation = camera.getParameters().getMaxExposureCompensation();
+
+    if ( minExposureCompensation == 0 && maxExposureCompensation == 0) {
+      callbackContext.error("Exposure corection not supported");
+    } else {
+      if (exposureCompensation < minExposureCompensation) {
+        exposureCompensation = minExposureCompensation;
+      } else if (exposureCompensation > maxExposureCompensation) {
+        exposureCompensation = maxExposureCompensation;
+      }
+      params.setExposureCompensation(exposureCompensation);
+      fragment.setCameraParameters(params);
+
+      callbackContext.success(exposureCompensation);
+    }
+  return true;
+  }
+
+  private boolean getExposureCompensationRange(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    int minExposureCompensation = camera.getParameters().getMinExposureCompensation();
+    int maxExposureCompensation = camera.getParameters().getMaxExposureCompensation();
+
+    if (minExposureCompensation == 0 && maxExposureCompensation == 0) {
+      callbackContext.error("Exposure corection not supported");
+    } else {
+      JSONObject jsonExposureRange = new JSONObject();
+      try {
+        jsonExposureRange.put("min", new Integer(minExposureCompensation));
+        jsonExposureRange.put("max", new Integer(maxExposureCompensation));
+      }
+      catch(JSONException e){
+        e.printStackTrace();
+      }
+      callbackContext.success(jsonExposureRange);
+    }
+    return true;
+  }
+
+  private boolean getSupportedWhiteBalanceModes(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    List<String> supportedWhiteBalanceModes;
+    supportedWhiteBalanceModes = params.getSupportedWhiteBalance();
+
+    JSONArray jsonWhiteBalanceModes = new JSONArray();
+    if (camera.getParameters().isAutoWhiteBalanceLockSupported()) {
+      jsonWhiteBalanceModes.put(new String("lock"));
+    }
+    if (supportedWhiteBalanceModes != null) {
+      for (int i=0; i<supportedWhiteBalanceModes.size(); i++) {
+        jsonWhiteBalanceModes.put(new String(supportedWhiteBalanceModes.get(i)));
+      }
+    }
+    callbackContext.success(jsonWhiteBalanceModes);
+    return true;
+  }
+
+  private boolean getWhiteBalanceMode(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    String whiteBalanceMode;
+
+    if (camera.getParameters().isAutoWhiteBalanceLockSupported()) {
+      if (camera.getParameters().getAutoWhiteBalanceLock()) {
+        whiteBalanceMode = "lock";
+      } else {
+        whiteBalanceMode = camera.getParameters().getWhiteBalance();
+      };
+    } else {
+      whiteBalanceMode = camera.getParameters().getWhiteBalance();
+    }
+    if (whiteBalanceMode != null) {
+      callbackContext.success(whiteBalanceMode);
+    } else {
+      callbackContext.error("White balance mode not supported");
+    }
+    return true;
+  }
+
+  private boolean setWhiteBalanceMode(String whiteBalanceMode, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (whiteBalanceMode.equals("lock")) {
+      if (camera.getParameters().isAutoWhiteBalanceLockSupported()) {
+        params.setAutoWhiteBalanceLock(true);
+        fragment.setCameraParameters(params);
+        callbackContext.success();
+      } else {
+        callbackContext.error("White balance lock not supported");
+      }
+    } else if (whiteBalanceMode.equals("auto") ||
+               whiteBalanceMode.equals("incandescent") ||
+               whiteBalanceMode.equals("cloudy-daylight") ||
+               whiteBalanceMode.equals("daylight") ||
+               whiteBalanceMode.equals("fluorescent") ||
+               whiteBalanceMode.equals("shade") ||
+               whiteBalanceMode.equals("twilight") ||
+               whiteBalanceMode.equals("warm-fluorescent")) {
+      params.setWhiteBalance(whiteBalanceMode);
+      fragment.setCameraParameters(params);
+      callbackContext.success();
+    } else {
+      callbackContext.error("White balance parameter not supported");
+    }
+    return true;
+  }
+
+  private boolean getMaxZoom(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (camera.getParameters().isZoomSupported()) {
+      int maxZoom = camera.getParameters().getMaxZoom();
+      callbackContext.success(maxZoom);
+    } else {
+      callbackContext.error("Zoom not supported");
+    }
+    return true;
+  }
+
+ private boolean getHorizontalFOV(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+	Camera camera = fragment.getCamera();
+	Camera.Parameters params = camera.getParameters();
+
+	float horizontalViewAngle = params.getHorizontalViewAngle();
+
+	callbackContext.success(String.valueOf(horizontalViewAngle));
+
+	return true;
+  }
+
+
+  private boolean getZoom(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (camera.getParameters().isZoomSupported()) {
+      int getZoom = camera.getParameters().getZoom();
+      callbackContext.success(getZoom);
+    } else {
+      callbackContext.error("Zoom not supported");
+    }
+    return true;
+  }
+
+  private boolean setZoom(int zoom, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    if (camera.getParameters().isZoomSupported()) {
+      params.setZoom(zoom);
+      fragment.setCameraParameters(params);
+
+      callbackContext.success(zoom);
+    } else {
+      callbackContext.error("Zoom not supported");
+    }
+
+    return true;
+  }
+
+  private boolean setPreviewSize(int width, int height, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    params.setPreviewSize(width, height);
+    fragment.setCameraParameters(params);
+    camera.startPreview();
+
+    callbackContext.success();
+    return true;
+  }
+
+private boolean getSupportedFlashModes(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+    List<String> supportedFlashModes;
+    supportedFlashModes = params.getSupportedFlashModes();
+    JSONArray jsonFlashModes = new JSONArray();
+
+    if (supportedFlashModes != null) {
+      for (int i=0; i<supportedFlashModes.size(); i++) {
+          jsonFlashModes.put(new String(supportedFlashModes.get(i)));
+      }
+    }
+
+    callbackContext.success(jsonFlashModes);
+    return true;
+  }
+
+private boolean getSupportedFocusModes(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+    List<String> supportedFocusModes;
+    supportedFocusModes = params.getSupportedFocusModes();
+
+    if (supportedFocusModes != null) {
+      JSONArray jsonFocusModes = new JSONArray();
+      for (int i=0; i<supportedFocusModes.size(); i++) {
+          jsonFocusModes.put(new String(supportedFocusModes.get(i)));
+      }
+      callbackContext.success(jsonFocusModes);
+      return true;
+    }
+    callbackContext.error("Camera focus modes parameters access error");
+    return true;
+  }
+
+  private boolean getFocusMode(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    List<String> supportedFocusModes;
+    supportedFocusModes = params.getSupportedFocusModes();
+
+    if (supportedFocusModes != null) {
+      String focusMode = params.getFocusMode();
+      callbackContext.success(focusMode);
+    } else {
+      callbackContext.error("FocusMode not supported");
+    }
+    return true;
+  }
+
+    private boolean setFocusMode(String focusMode, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    List<String> supportedFocusModes;
+    List<String> supportedAutoFocusModes = Arrays.asList("auto", "continuous-picture", "continuous-video","macro");
+    supportedFocusModes = params.getSupportedFocusModes();
+    if (supportedFocusModes.indexOf(focusMode) > -1) {
+      params.setFocusMode(focusMode);
+      fragment.setCameraParameters(params);
+      callbackContext.success(focusMode);
+      return true;
+    } else {
+      callbackContext.error("Focus mode not recognised: " + focusMode);
+      return true;
+    }
+  }
+
+  private boolean getFlashMode(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    String flashMode = params.getFlashMode();
+
+    if (flashMode != null ) {
+      callbackContext.success(flashMode);
+    } else {
+      callbackContext.error("FlashMode not supported");
+    }
+    return true;
+  }
+
+  private boolean setFlashMode(String flashMode, CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    Camera camera = fragment.getCamera();
+    Camera.Parameters params = camera.getParameters();
+
+    List<String> supportedFlashModes;
+    supportedFlashModes = camera.getParameters().getSupportedFlashModes();
+    if (supportedFlashModes.indexOf(flashMode) > -1) {
+      params.setFlashMode(flashMode);
+    } else {
+      callbackContext.error("Flash mode not recognised: " + flashMode);
+      return true;
+    }
+
+    fragment.setCameraParameters(params);
+
+    callbackContext.success(flashMode);
+    return true;
+  }
+
+  private boolean stopCamera(CallbackContext callbackContext) {
+
+    if(webViewParent != null) {
+      cordova.getActivity().runOnUiThread(new Runnable() {
         @Override
         public void run() {
-          frameContainerLayout.setClickable(true);
-          frameContainerLayout.setOnTouchListener(new View.OnTouchListener() {
-
-            private int mLastTouchX;
-            private int mLastTouchY;
-            private int mPosX = 0;
-            private int mPosY = 0;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-              FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) frameContainerLayout.getLayoutParams();
-
-
-              boolean isSingleTapTouch = gestureDetector.onTouchEvent(event);
-              if (event.getAction() != MotionEvent.ACTION_MOVE && isSingleTapTouch) {
-                if (tapToTakePicture && tapToFocus) {
-                  setFocusArea((int) event.getX(0), (int) event.getY(0), new Camera.AutoFocusCallback() {
-                    public void onAutoFocus(boolean success, Camera camera) {
-                      if (success) {
-                        takePicture(0, 0, 85);
-                      } else {
-                        Log.d(TAG, "onTouch:" + " setFocusArea() did not suceed");
-                      }
-                    }
-                  });
-
-                } else if (tapToTakePicture) {
-                  takePicture(0, 0, 85);
-
-                } else if (tapToFocus) {
-                  setFocusArea((int) event.getX(0), (int) event.getY(0), new Camera.AutoFocusCallback() {
-                    public void onAutoFocus(boolean success, Camera camera) {
-                      if (success) {
-                        // A callback to JS might make sense here.
-                      } else {
-                        Log.d(TAG, "onTouch:" + " setFocusArea() did not suceed");
-                      }
-                    }
-                  });
-                }
-                return true;
-              } else {
-                if (dragEnabled) {
-                  int x;
-                  int y;
-
-                  switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                      if (mLastTouchX == 0 || mLastTouchY == 0) {
-                        mLastTouchX = (int) event.getRawX() - layoutParams.leftMargin;
-                        mLastTouchY = (int) event.getRawY() - layoutParams.topMargin;
-                      } else {
-                        mLastTouchX = (int) event.getRawX();
-                        mLastTouchY = (int) event.getRawY();
-                      }
-                      break;
-                    case MotionEvent.ACTION_MOVE:
-
-                      x = (int) event.getRawX();
-                      y = (int) event.getRawY();
-
-                      final float dx = x - mLastTouchX;
-                      final float dy = y - mLastTouchY;
-
-                      mPosX += dx;
-                      mPosY += dy;
-
-                      layoutParams.leftMargin = mPosX;
-                      layoutParams.topMargin = mPosY;
-
-                      frameContainerLayout.setLayoutParams(layoutParams);
-
-                      // Remember this touch position for the next move event
-                      mLastTouchX = x;
-                      mLastTouchY = y;
-
-                      break;
-                    default:
-                      break;
-                  }
-                }
-              }
-              return true;
-            }
-          });
-          frameContainerLayout.setFocusableInTouchMode(true);
-          frameContainerLayout.requestFocus();
-          frameContainerLayout.setOnKeyListener(new android.view.View.OnKeyListener() {
-            @Override
-            public boolean onKey(android.view.View v, int keyCode, android.view.KeyEvent event) {
-
-              if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-                eventListener.onBackButton();
-                return true;
-              }
-              return false;
-            }
-          });
-        }
-      });
-
-  }
-
-  private void setDefaultCameraId(){
-    // Find the total number of cameras available
-    numberOfCameras = Camera.getNumberOfCameras();
-
-    int facing = defaultCamera.equals("front") ? Camera.CameraInfo.CAMERA_FACING_FRONT : Camera.CameraInfo.CAMERA_FACING_BACK;
-
-    // Find the ID of the default camera
-    Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
-    for (int i = 0; i < numberOfCameras; i++) {
-      Camera.getCameraInfo(i, cameraInfo);
-      if (cameraInfo.facing == facing) {
-        defaultCameraId = i;
-        break;
-      }
-    }
-  }
-
-  @Override
-  public void onResume() {
-    super.onResume();
-
-    mCamera = Camera.open(defaultCameraId);
-
-    if (cameraParameters != null) {
-      mCamera.setParameters(cameraParameters);
-    }
-
-    cameraCurrentlyLocked = defaultCameraId;
-
-    if(mPreview.mPreviewSize == null){
-      mPreview.setCamera(mCamera, cameraCurrentlyLocked);
-      eventListener.onCameraStarted();
-    } else {
-      mPreview.switchCamera(mCamera, cameraCurrentlyLocked);
-      mCamera.startPreview();
-    }
-
-    Log.d(TAG, "cameraCurrentlyLocked:" + cameraCurrentlyLocked);
-
-    final FrameLayout frameContainerLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("frame_container", "id", appResourcesPackage));
-
-    ViewTreeObserver viewTreeObserver = frameContainerLayout.getViewTreeObserver();
-
-    if (viewTreeObserver.isAlive()) {
-      viewTreeObserver.addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-        @Override
-        public void onGlobalLayout() {
-          frameContainerLayout.getViewTreeObserver().removeGlobalOnLayoutListener(this);
-          frameContainerLayout.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-          Activity activity = getActivity();
-          if (isAdded() && activity != null) {
-            final RelativeLayout frameCamContainerLayout = (RelativeLayout) view.findViewById(getResources().getIdentifier("frame_camera_cont", "id", appResourcesPackage));
-
-            FrameLayout.LayoutParams camViewLayout = new FrameLayout.LayoutParams(frameContainerLayout.getWidth(), frameContainerLayout.getHeight());
-            camViewLayout.gravity = Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL;
-            frameCamContainerLayout.setLayoutParams(camViewLayout);
-          }
+          ((ViewGroup)webView.getView()).bringToFront();
+          webViewParent = null;
         }
       });
     }
-  }
 
-  @Override
-  public void onPause() {
-    super.onPause();
-
-    // Because the Camera object is a shared resource, it's very important to release it when the activity is paused.
-    if (mCamera != null) {
-      setDefaultCameraId();
-      mPreview.setCamera(null, -1);
-      mCamera.setPreviewCallback(null);
-      mCamera.release();
-      mCamera = null;
+    if(this.hasView(callbackContext) == false){
+      return true;
     }
+
+    FragmentManager fragmentManager = cordova.getActivity().getFragmentManager();
+    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+    fragmentTransaction.remove(fragment);
+    fragmentTransaction.commit();
+    fragment = null;
+
+    callbackContext.success();
+    return true;
   }
 
-  public Camera getCamera() {
-    return mCamera;
+  private boolean showCamera(CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return true;
+    }
+
+    FragmentManager fragmentManager = cordova.getActivity().getFragmentManager();
+    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+    fragmentTransaction.show(fragment);
+    fragmentTransaction.commit();
+
+    callbackContext.success();
+    return true;
   }
 
-  public void switchCamera() {
-    // check for availability of multiple cameras
-    if (numberOfCameras == 1) {
-      //There is only one camera available
-    }else{
-      Log.d(TAG, "numberOfCameras: " + numberOfCameras);
+  private boolean hideCamera(CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return true;
+    }
 
-      // OK, we have multiple cameras. Release this camera -> cameraCurrentlyLocked
-      if (mCamera != null) {
-        mCamera.stopPreview();
-        mPreview.setCamera(null, -1);
-        mCamera.release();
-        mCamera = null;
-      }
+    FragmentManager fragmentManager = cordova.getActivity().getFragmentManager();
+    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+    fragmentTransaction.hide(fragment);
+    fragmentTransaction.commit();
 
-      Log.d(TAG, "cameraCurrentlyLocked := " + Integer.toString(cameraCurrentlyLocked));
-      try {
-        cameraCurrentlyLocked = (cameraCurrentlyLocked + 1) % numberOfCameras;
-        Log.d(TAG, "cameraCurrentlyLocked new: " + cameraCurrentlyLocked);
-      } catch (Exception exception) {
-        Log.d(TAG, exception.getMessage());
-      }
+    callbackContext.success();
+    return true;
+  }
 
-      // Acquire the next camera and request Preview to reconfigure parameters.
-      mCamera = Camera.open(cameraCurrentlyLocked);
+  private boolean tapToFocus(final int pointX, final int pointY, CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return true;
+    }
 
-      if (cameraParameters != null) {
-        Log.d(TAG, "camera parameter not null");
+    setFocusCallbackContext = callbackContext;
 
-        // Check for flashMode as well to prevent error on frontward facing camera.
-        List<String> supportedFlashModesNewCamera = mCamera.getParameters().getSupportedFlashModes();
-        String currentFlashModePreviousCamera = cameraParameters.getFlashMode();
-        if (supportedFlashModesNewCamera != null && supportedFlashModesNewCamera.contains(currentFlashModePreviousCamera)) {
-          Log.d(TAG, "current flash mode supported on new camera. setting params");
-         /* mCamera.setParameters(cameraParameters);
-            The line above is disabled because parameters that can actually be changed are different from one device to another. Makes less sense trying to reconfigure them when changing camera device while those settings gan be changed using plugin methods.
-         */
+    fragment.setFocusArea(pointX, pointY, new Camera.AutoFocusCallback() {
+      public void onAutoFocus(boolean success, Camera camera) {
+        if (success) {
+          onFocusSet(pointX, pointY);
         } else {
-          Log.d(TAG, "current flash mode NOT supported on new camera");
-        }
-
-      } else {
-        Log.d(TAG, "camera parameter NULL");
-      }
-
-      mPreview.switchCamera(mCamera, cameraCurrentlyLocked);
-
-      mCamera.startPreview();
-    }
-  }
-
-  public void setCameraParameters(Camera.Parameters params) {
-    cameraParameters = params;
-
-    if (mCamera != null && cameraParameters != null) {
-      mCamera.setParameters(cameraParameters);
-    }
-  }
-
-  public boolean hasFrontCamera(){
-    return getActivity().getApplicationContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT);
-  }
-
-  public static Bitmap applyMatrix(Bitmap source, Matrix matrix) {
-    return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
-  }
-
-  ShutterCallback shutterCallback = new ShutterCallback(){
-    public void onShutter(){
-      // do nothing, availabilty of this callback causes default system shutter sound to work
-    }
-  };
-
-  private static int exifToDegrees(int exifOrientation) {
-    if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_90) { return 90; }
-    else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_180) {  return 180; }
-    else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_270) {  return 270; }
-    return 0;
-  }
-
-  private String getTempDirectoryPath() {
-    File cache = null;
-
-    // Use internal storage
-    cache = getActivity().getCacheDir();
-
-    // Create the cache directory if it doesn't exist
-    cache.mkdirs();
-    return cache.getAbsolutePath();
-  }
-
-  private String getTempFilePath() {
-    return getTempDirectoryPath() + "/cpcp_capture_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8) + ".jpg";
-  }
-
-  PictureCallback jpegPictureCallback = new PictureCallback(){
-    public void onPictureTaken(byte[] data, Camera arg1){
-      Log.d(TAG, "CameraPreview jpegPictureCallback");
-
-      try {
-        if (!disableExifHeaderStripping) {
-          Matrix matrix = new Matrix();
-          if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            matrix.preScale(1.0f, -1.0f);
-          }
-
-          ExifInterface exifInterface = new ExifInterface(new ByteArrayInputStream(data));
-          int rotation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
-          int rotationInDegrees = exifToDegrees(rotation);
-
-          if (rotation != 0f) {
-            matrix.preRotate(rotationInDegrees);
-          }
-
-          // Check if matrix has changed. In that case, apply matrix and override data
-          if (!matrix.isIdentity()) {
-            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
-            bitmap = applyMatrix(bitmap, matrix);
-
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, currentQuality, outputStream);
-            data = outputStream.toByteArray();
-          }
-        }
-
-        if (!storeToFile) {
-          String encodedImage = Base64.encodeToString(data, Base64.NO_WRAP);
-
-          eventListener.onPictureTaken(encodedImage);
-        } else {
-          String path = getTempFilePath();
-          FileOutputStream out = new FileOutputStream(path);
-          out.write(data);
-          out.close();
-          eventListener.onPictureTaken(path);
-        }
-        Log.d(TAG, "CameraPreview pictureTakenHandler called back");
-      } catch (OutOfMemoryError e) {
-        // most likely failed to allocate memory for rotateBitmap
-        Log.d(TAG, "CameraPreview OutOfMemoryError");
-        // failed to allocate memory
-        eventListener.onPictureTakenError("Picture too large (memory)");
-      } catch (IOException e) {
-        Log.d(TAG, "CameraPreview IOException");
-        eventListener.onPictureTakenError("IO Error when extracting exif");
-      } catch (Exception e) {
-        Log.d(TAG, "CameraPreview onPictureTaken general exception");
-      } finally {
-        canTakePicture = true;
-        mCamera.startPreview();
-      }
-    }
-  };
-
-  private Camera.Size getOptimalPictureSize(final int width, final int height, final Camera.Size previewSize, final List<Camera.Size> supportedSizes){
-    /*
-      get the supportedPictureSize that:
-      - matches exactly width and height
-      - has the closest aspect ratio to the preview aspect ratio
-      - has picture.width and picture.height closest to width and height
-      - has the highest supported picture width and height up to 2 Megapixel if width == 0 || height == 0
-    */
-    Camera.Size size = mCamera.new Size(width, height);
-
-    // convert to landscape if necessary
-    if (size.width < size.height) {
-      int temp = size.width;
-      size.width = size.height;
-      size.height = temp;
-    }
-
-    Camera.Size requestedSize = mCamera.new Size(size.width, size.height);
-
-    double previewAspectRatio  = (double)previewSize.width / (double)previewSize.height;
-
-    if (previewAspectRatio < 1.0) {
-      // reset ratio to landscape
-      previewAspectRatio = 1.0 / previewAspectRatio;
-    }
-
-    Log.d(TAG, "CameraPreview previewAspectRatio " + previewAspectRatio);
-
-    double aspectTolerance = 0.1;
-    double bestDifference = Double.MAX_VALUE;
-
-    for (int i = 0; i < supportedSizes.size(); i++) {
-      Camera.Size supportedSize = supportedSizes.get(i);
-
-      // Perfect match
-      if (supportedSize.equals(requestedSize)) {
-        Log.d(TAG, "CameraPreview optimalPictureSize " + supportedSize.width + 'x' + supportedSize.height);
-        return supportedSize;
-      }
-
-      double difference = Math.abs(previewAspectRatio - ((double)supportedSize.width / (double)supportedSize.height));
-
-      if (difference < bestDifference - aspectTolerance) {
-        // better aspectRatio found
-        if ((width != 0 && height != 0) || (supportedSize.width * supportedSize.height < 2048 * 1024)) {
-          size.width = supportedSize.width;
-          size.height = supportedSize.height;
-          bestDifference = difference;
-        }
-      } else if (difference < bestDifference + aspectTolerance) {
-        // same aspectRatio found (within tolerance)
-        if (width == 0 || height == 0) {
-          // set highest supported resolution below 2 Megapixel
-          if ((size.width < supportedSize.width) && (supportedSize.width * supportedSize.height < 2048 * 1024)) {
-            size.width = supportedSize.width;
-            size.height = supportedSize.height;
-          }
-        } else {
-          // check if this pictureSize closer to requested width and height
-          if (Math.abs(width * height - supportedSize.width * supportedSize.height) < Math.abs(width * height - size.width * size.height)) {
-            size.width = supportedSize.width;
-            size.height = supportedSize.height;
-          }
-        }
-      }
-    }
-    Log.d(TAG, "CameraPreview optimalPictureSize " + size.width + 'x' + size.height);
-    return size;
-  }
-  static byte[] rotateNV21(final byte[] yuv,
-                           final int width,
-                           final int height,
-                           final int rotation)
-  {
-    if (rotation == 0) return yuv;
-    if (rotation % 90 != 0 || rotation < 0 || rotation > 270) {
-      throw new IllegalArgumentException("0 <= rotation < 360, rotation % 90 == 0");
-    }
-
-    final byte[]  output    = new byte[yuv.length];
-    final int     frameSize = width * height;
-    final boolean swap      = rotation % 180 != 0;
-    final boolean xflip     = rotation % 270 != 0;
-    final boolean yflip     = rotation >= 180;
-
-    for (int j = 0; j < height; j++) {
-      for (int i = 0; i < width; i++) {
-        final int yIn = j * width + i;
-        final int uIn = frameSize + (j >> 1) * width + (i & ~1);
-        final int vIn = uIn       + 1;
-
-        final int wOut     = swap  ? height              : width;
-        final int hOut     = swap  ? width               : height;
-        final int iSwapped = swap  ? j                   : i;
-        final int jSwapped = swap  ? i                   : j;
-        final int iOut     = xflip ? wOut - iSwapped - 1 : iSwapped;
-        final int jOut     = yflip ? hOut - jSwapped - 1 : jSwapped;
-
-        final int yOut = jOut * wOut + iOut;
-        final int uOut = frameSize + (jOut >> 1) * wOut + (iOut & ~1);
-        final int vOut = uOut + 1;
-
-        output[yOut] = (byte)(0xff & yuv[yIn]);
-        output[uOut] = (byte)(0xff & yuv[uIn]);
-        output[vOut] = (byte)(0xff & yuv[vIn]);
-      }
-    }
-    return output;
-  }
-  public void takeSnapshot(final int quality) {
-    mCamera.setPreviewCallback(new Camera.PreviewCallback() {
-      @Override
-      public void onPreviewFrame(byte[] bytes, Camera camera) {
-        try {
-          Camera.Parameters parameters = camera.getParameters();
-          Camera.Size size = parameters.getPreviewSize();
-          int orientation = mPreview.getDisplayOrientation();
-          if (mPreview.getCameraFacing() == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            switch (orientation) {
-              case 90:
-                bytes = rotateNV21(bytes, size.width, size.height, 270);
-                break;
-              case 270:
-                bytes = rotateNV21(bytes, size.width, size.height, 90);
-                break;
-              default:
-                bytes = rotateNV21(bytes, size.width, size.height, orientation);
-                break;
-            }
-          } else {
-            bytes = rotateNV21(bytes, size.width, size.height, orientation);
-          }
-          YuvImage yuvImage = new YuvImage(bytes, parameters.getPreviewFormat(), size.width, size.height, null);
-          ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-
-          Rect rect = new Rect(0, 0, size.width, size.height);
-
-          yuvImage.compressToJpeg(rect, quality, byteArrayOutputStream);
-          byte[] data = byteArrayOutputStream.toByteArray();
-          byteArrayOutputStream.close();
-          eventListener.onSnapshotTaken(Base64.encodeToString(data, Base64.NO_WRAP));
-        } catch (IOException e) {
-          Log.d(TAG, "CameraPreview IOException");
-          eventListener.onSnapshotTakenError("IO Error");
-        } finally {
-
-          mCamera.setPreviewCallback(null);
+          onFocusSetError("fragment.setFocusArea() failed");
         }
       }
     });
+    return true;
   }
 
+  public void onFocusSet(final int pointX, final int pointY) {
+    Log.d(TAG, "Focus set, returning coordinates");
+
+    JSONObject data = new JSONObject();
+    try {
+      data.put("x", pointX);
+      data.put("y", pointY);
+    } catch (JSONException e) {
+      Log.d(TAG, "onFocusSet failed to set output payload");
+    }
+
+    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, data);
+    pluginResult.setKeepCallback(true);
+    setFocusCallbackContext.sendPluginResult(pluginResult);
+  }
+
+  public void onFocusSetError(String message) {
+    Log.d(TAG, "CameraPreview onFocusSetError");
+    setFocusCallbackContext.error(message);
+  }
+
+  private boolean switchCamera(CallbackContext callbackContext) {
+    if(this.hasView(callbackContext) == false){
+      return true;
+    }
+
+    fragment.switchCamera();
+
+    callbackContext.success();
+    return true;
+  }
+
+  public boolean setBackButtonListener(CallbackContext callbackContext) {
+    tapBackButtonContext = callbackContext;
+    return true;
+  }
+
+  public void onBackButton() {
+    if(tapBackButtonContext == null) {
+      return;
+    }
+    Log.d(TAG, "Back button tapped, notifying");
+    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, "Back button pressed");
+    tapBackButtonContext.sendPluginResult(pluginResult);
+  }
+
+  private boolean getCameraCharacteristics(CallbackContext callbackContext) {
+    if(this.hasCamera(callbackContext) == false){
+      return true;
+    }
+
+    JSONObject data = new JSONObject();
+    JSONArray cameraCharacteristicsArray = new JSONArray();
+	
+    // Get the CameraManager
+    CameraManager cManager = (CameraManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.CAMERA_SERVICE);
+	
+    try {
+      for (String cameraId : cManager.getCameraIdList()) {
+        CameraCharacteristics characteristics = cManager.getCameraCharacteristics(cameraId);
+	
+	JSONObject cameraData = new JSONObject();
+	
+	// INFO_SUPPORTED_HARDWARE_LEVEL
+	Integer supportLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+	cameraData.put("INFO_SUPPORTED_HARDWARE_LEVEL", supportLevel);
+	
+	// LENS_FACING
+	Integer lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING);
+	cameraData.put("LENS_FACING", lensFacing);
+	
+	// SENSOR_INFO_PHYSICAL_SIZE
+	SizeF sensorInfoPhysicalSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+	cameraData.put("SENSOR_INFO_PHYSICAL_SIZE_WIDTH", new Double(sensorInfoPhysicalSize.getWidth()));
+	cameraData.put("SENSOR_INFO_PHYSICAL_SIZE_HEIGHT", new Double(sensorInfoPhysicalSize.getHeight()));
+	
+	// SENSOR_INFO_PIXEL_ARRAY_SIZE
+	Size sensorInfoPixelSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE);
+	cameraData.put("SENSOR_INFO_PIXEL_ARRAY_SIZE_WIDTH", new Integer(sensorInfoPixelSize.getWidth()));
+	cameraData.put("SENSOR_INFO_PIXEL_ARRAY_SIZE_HEIGHT", new Integer(sensorInfoPixelSize.getHeight()));
+	
+	// LENS_INFO_AVAILABLE_FOCAL_LENGTHS
+	float[] focalLengths = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+	JSONArray focalLengthsArray = new JSONArray();
+	for (int focusId=0; focusId<focalLengths.length; focusId++) {
+	  JSONObject focalLengthsData = new JSONObject();
+	  focalLengthsData.put("FOCAL_LENGTH", new Double(focalLengths[focusId]));
+	  focalLengthsArray.put(focalLengthsData);
+	}
+	cameraData.put("LENS_INFO_AVAILABLE_FOCAL_LENGTHS", focalLengthsArray);
+	
+	// add camera data to result list
+	cameraCharacteristicsArray.put(cameraData);
+      }
+		
+      data.put("CAMERA_CHARACTERISTICS", cameraCharacteristicsArray);
+		
+    } catch (CameraAccessException e) {
+      Log.e(TAG, e.getMessage(), e);
+    } catch (JSONException e) {
+      Log.d(TAG, "getCameraSensorInfo failed to set output payload");
+    }
+
+    callbackContext.success(data);
+    return true;
+  }
   
-
-  public void takePicture(final int width, final int height, final int quality){
-    Log.d(TAG, "CameraPreview takePicture width: " + width + ", height: " + height + ", quality: " + quality);
-
-    if(mPreview != null) {
-      if(!canTakePicture){
-        return;
-      }
-
-      canTakePicture = false;
-
-      new Thread() {
-        public void run() {
-          Camera.Parameters params = mCamera.getParameters();
-
-          Camera.Size size = getOptimalPictureSize(width, height, params.getPreviewSize(), params.getSupportedPictureSizes());
-          params.setPictureSize(size.width, size.height);
-          currentQuality = quality;
-
-          if(cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT && !storeToFile) {
-            // The image will be recompressed in the callback
-            params.setJpegQuality(99);
-          } else {
-            params.setJpegQuality(quality);
-          }
-
-          params.setRotation(mPreview.getDisplayOrientation());
-
-          mCamera.setParameters(params);
-          mCamera.takePicture(shutterCallback, null, jpegPictureCallback);
-        }
-      }.start();
-    } else {
-      canTakePicture = true;
-    }
-  }
-
-  public void setFocusArea(final int pointX, final int pointY, final Camera.AutoFocusCallback callback) {
-    if (mCamera != null) {
-
-      mCamera.cancelAutoFocus();
-
-      Camera.Parameters parameters = mCamera.getParameters();
-
-      Rect focusRect = calculateTapArea(pointX, pointY, 1f);
-      parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
-      parameters.setFocusAreas(Arrays.asList(new Camera.Area(focusRect, 1000)));
-
-      if (parameters.getMaxNumMeteringAreas() > 0) {
-        Rect meteringRect = calculateTapArea(pointX, pointY, 1.5f);
-        parameters.setMeteringAreas(Arrays.asList(new Camera.Area(meteringRect, 1000)));
-      }
-
-      try {
-        setCameraParameters(parameters);
-        mCamera.autoFocus(callback);
-      } catch (Exception e) {
-        Log.d(TAG, e.getMessage());
-        callback.onAutoFocus(false, this.mCamera);
-      }
-    }
-  }
-
-  private Rect calculateTapArea(float x, float y, float coefficient) {
-    if (x < 100) {
-      x = 100;
-    }
-    if (x > width - 100) {
-      x = width - 100;
-    }
-    if (y < 100) {
-      y = 100;
-    }
-    if (y > height - 100) {
-      y = height - 100;
-    }
-    return new Rect(
-      Math.round((x - 100) * 2000 / width  - 1000),
-      Math.round((y - 100) * 2000 / height - 1000),
-      Math.round((x + 100) * 2000 / width  - 1000),
-      Math.round((y + 100) * 2000 / height - 1000)
-    );
-  }
 }
